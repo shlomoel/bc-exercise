@@ -8,7 +8,7 @@ terraform {
 }
 
 variable "docker_image_version" {
-  description = "Specify the version of the docker image here"
+  description = "Specify the version of the docker image"
   type        = string
   default     = "latest"
 }
@@ -16,19 +16,28 @@ variable "docker_image_version" {
 variable "number_of_containers" {
   description = "Number of web-servers containers to create"
   type        = number
-  default     = 3 # You can change the number of containers here
+  default     = 3
 }
 
 resource "docker_network" "default" {
   name = "nginx_network"
 }
 
+#Used to generate specific content per web server
 resource "local_file" "index_html" {
   count    = var.number_of_containers
   content  = templatefile("${path.module}/index.html.tpl", { server_name = "web${count.index + 1}" })
   filename = "${path.module}/nginx-content/web${count.index + 1}/index.html"
 }
 
+#Used to generate health endpoint page per web server
+resource "local_file" "health_html" {
+  count    = var.number_of_containers
+  content  = templatefile("${path.module}/health.html.tpl", { server_name = "web${count.index + 1}" })
+  filename = "${path.module}/nginx-content/web${count.index + 1}/health.html"
+}
+
+#Used to update number of Load-Balancer backends to be attached
 resource "local_file" "nginx_conf" {
   content  = templatefile("${path.module}/nginx.conf.tpl", { number_of_containers = var.number_of_containers })
   filename = "${path.module}/nginx-load-balancer/nginx.conf"
@@ -65,6 +74,10 @@ resource "docker_container" "web" {
     host_path       = abspath("${path.module}/nginx-content/web${count.index + 1}")
     read_only       = false
   }
+  ports {
+    internal = 80
+    external = 8080 + count.index
+  }
 }
 
 resource "docker_container" "load_balancer" {
@@ -79,7 +92,7 @@ resource "docker_container" "load_balancer" {
 
   ports {
     internal = 80
-    external = 8080
+    external = 80
   }
 }
 
